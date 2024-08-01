@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google Sheets Dice Roller with Player Tracker</title>
+    <style>
+        body {
+            font-family: 'Times New Roman', Times, serif;
+            text-align: center;
+            margin-top: 50px;
+            background-color: #f4f1e9;
+            background-image: url('https://www.transparenttextures.com/patterns/aged-papyrus.png');
+            color: #333;
+        }
+        h1, h2, h3 {
+            font-family: 'Courier New', Courier, monospace;
+        }
+        #result, #setup, #game, #cycleMessage, #dayEndMessage {
+            margin-top: 20px;
+            padding: 20px;
+            border: 2px solid #333;
+            display: inline-block;
+            background-color: #fff;
+            box-shadow: 3px 3px 10px rgba(0, 0, 0, 0.5);
+        }
+        #game, #cycleMessage, #dayEndMessage {
+            display: none;
+        }
+        button {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: #444;
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #666;
+        }
+        input {
+            margin: 5px;
+            padding: 5px;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        ul {
+            list-style: none;
+            padding: 0;
+        }
+        li {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Google Sheets Dice Roller with Player Tracker</h1>
+    <div id="setup">
+        <h2>Setup Players</h2>
+        <label for="numPlayers">Number of Players:</label>
+        <input type="number" id="numPlayers" min="1" max="10">
+        <button id="setupButton">Setup</button>
+        <div id="playerNames"></div>
+    </div>
+    <div id="game">
+        <h2>Current Player: <span id="currentPlayer"></span></h2>
+        <h3>Time of Day: <span id="timeOfDay">Day</span></h3>
+        <button id="rollButton">Roll Dice</button>
+        <div id="result"></div>
+        <h3>Previous Rolls:</h3>
+        <ul id="previousRolls"></ul>
+        <h3>Cycles Completed: <span id="cycleCount">0</span></h3>
+        <h3>Weather: <span id="currentWeather"></span></h3>
+    </div>
+    <div id="cycleMessage">
+        <h2>Cycle Completed</h2>
+        <p>Everybody remove 1 food, 1 water.</p>
+        <div id="playerConfirmations"></div>
+    </div>
+    <div id="dayEndMessage">
+        <h2>Day Completed</h2>
+        <p>All players please enter your PINs to continue.</p>
+        <div id="playerPINs"></div>
+    </div>
+
+    <script>
+        const sheetId = '1xEJc-QzzoB_tfSmvYOKreYTIwM1UgdzPIKaWeSQUmmQ';
+        const apiKey = 'AIzaSyDAQy02cGXB1HGUMX-v7D60Iq5VHtDq7Mw';
+
+        let players = [];
+        let playerPins = [];
+        let currentPlayerIndex = 0;
+        let previousRolls = [];
+        let cycleCount = 0;
+        let dayCycle = 0; // 0: Day, 1: Night
+        let confirmations = [];
+        let weather = '';
+
+        const weatherTypes = [
+            { type: "Clear Skies", severity: "Low" },
+            { type: "Light Rain", severity: "Low" },
+            { type: "Heavy Rain", severity: "Medium" },
+            { type: "Thunderstorm", severity: "High" },
+            { type: "Fog", severity: "Medium" },
+            { type: "Snowfall", severity: "Medium" },
+            { type: "Heatwave", severity: "High" },
+            { type: "Sandstorm", severity: "High" }
+        ];
+
+        document.getElementById('setupButton').addEventListener('click', () => {
+            const numPlayers = parseInt(document.getElementById('numPlayers').value);
+            const playerNamesDiv = document.getElementById('playerNames');
+            playerNamesDiv.innerHTML = '';
+
+            for (let i = 0; i < numPlayers; i++) {
+                const nameInput = document.createElement('input');
+                nameInput.type = 'text';
+                nameInput.placeholder = `Player ${i + 1} Name`;
+
+                const pinInput = document.createElement('input');
+                pinInput.type = 'password';
+                pinInput.placeholder = `Player ${i + 1} PIN (4 digits)`;
+                pinInput.maxLength = 4;
+                pinInput.pattern = '\\d{4}';
+
+                playerNamesDiv.appendChild(nameInput);
+                playerNamesDiv.appendChild(pinInput);
+            }
+
+            const startButton = document.createElement('button');
+            startButton.textContent = 'Start Game';
+            startButton.addEventListener('click', startGame);
+            playerNamesDiv.appendChild(startButton);
+        });
+
+        function startGame() {
+            const playerInputs = document.getElementById('playerNames').querySelectorAll('input[type="text"]');
+            const pinInputs = document.getElementById('playerNames').querySelectorAll('input[type="password"]');
+            players = Array.from(playerInputs).map(input => input.value || 'Anonymous');
+            playerPins = Array.from(pinInputs).map(input => input.value);
+
+            document.getElementById('setup').style.display = 'none';
+            document.getElementById('game').style.display = 'block';
+            updateCurrentPlayer();
+        }
+
+        function updateCurrentPlayer() {
+            document.getElementById('currentPlayer').textContent = players[currentPlayerIndex];
+        }
+
+        document.getElementById('rollButton').addEventListener('click', () => {
+            const d20 = Math.floor(Math.random() * 20) + 1;
+            const d6 = Math.floor(Math.random() * 6) + 1;
+
+            fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/Sheet1!A1:F20?key=${apiKey}`)
+                .then(response => response.json())
+                .then(data => {
+                    const rows = data.values;
+                    const selectedRow = rows[d20 - 1];
+                    const selectedCategory = selectedRow[d6 - 1];
+
+                    const resultText = `Row: ${d20}, Category: ${d6}, Result: ${selectedCategory}`;
+                    document.getElementById('result').innerText = resultText;
+
+                    previousRolls.push(`${players[currentPlayerIndex]} rolled: ${resultText}`);
+                    if (previousRolls.length > 10) {
+                        previousRolls.shift();
+                    }
+                    updatePreviousRolls();
+
+                    currentPlayerIndex = (currentPlayerIndex + 1) % players.length;
+                    updateCurrentPlayer();
+
+                    if (previousRolls.length === 10) {
+                        cycleCount++;
+                        document.getElementById('cycleCount').textContent = cycleCount;
+                        if (cycleCount % 2 === 0) {
+                            showDayEndMessage();
+                        } else {
+                            toggleDayNight();
+                            showCycleMessage();
+                        }
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.getElementById('result').innerText = 'Failed to fetch data from Google Sheets.';
+                });
+        });
+
+        function updatePreviousRolls() {
+            const previousRollsList = document.getElementById('previousRolls');
+            previousRollsList.innerHTML = '';
+            previousRolls.forEach(roll => {
+                const listItem = document.createElement('li');
+                listItem.textContent = roll;
+                previousRollsList.appendChild(listItem);
+            });
+        }
+
+        function toggleDayNight() {
+            dayCycle = (dayCycle + 1) % 2;
+            document.getElementById('timeOfDay').textContent = dayCycle === 0 ? 'Day' : 'Night';
+        }
+
+        function showCycleMessage() {
+            document.getElementById('game').style.display = 'none';
+            document.getElementById('cycleMessage').style.display = 'block';
+
+            const playerConfirmationsDiv = document.getElementById('playerConfirmations');
+            playerConfirmationsDiv.innerHTML = '';
+            confirmations = players.map(player => false);
+
+            players.forEach((player, index) => {
+                const playerDiv = document.createElement('div');
+                playerDiv.textContent = player;
+
+                const confirmButton = document.createElement('button');
+                confirmButton.textContent = 'All Set';
+                confirmButton.addEventListener('click', () => {
+                    confirmations[index] = true;
+                    confirmButton.disabled = true;
+                    checkAllConfirmed();
+                });
+
+                playerDiv.appendChild(confirmButton);
+                playerConfirmationsDiv.appendChild(playerDiv);
+            });
+        }
+
+        function checkAllConfirmed() {
+            if (confirmations.every(confirmed => confirmed)) {
+                previousRolls = [];
+                updatePreviousRolls();
+                document.getElementById('cycleMessage').style.display = 'none';
+                document.getElementById('game').style.display = 'block';
+            }
+        }
+
+        function showDayEndMessage() {
+            document.getElementById('game').style.display = 'none';
+            document.getElementById('dayEndMessage').style.display = 'block';
+
+            const playerPINsDiv = document.getElementById('playerPINs');
+            playerPINsDiv.innerHTML = '';
+            confirmations = players.map(player => false);
+
+            players.forEach((player, index) => {
+                const playerDiv = document.createElement('div');
+                playerDiv.textContent = player;
+
+                const pinInput = document.createElement('input');
+                pinInput.type = 'password';
+                pinInput.placeholder = `Enter PIN for ${player}`;
+                pinInput.maxLength = 4;
+                pinInput.pattern = '\\d{4}';
+
+                const confirmButton = document.createElement('button');
+                confirmButton.textContent = 'Confirm';
+                confirmButton.addEventListener('click', () => {
+                    if (pinInput.value === playerPins[index]) {
+                        confirmations[index] = true;
+                        pinInput.disabled = true;
+                        confirmButton.disabled = true;
+                        checkAllPINsConfirmed();
+                    } else {
+                        alert('Incorrect PIN');
+                    }
+                });
+
+                playerDiv.appendChild(pinInput);
+                playerDiv.appendChild(confirmButton);
+                playerPINsDiv.appendChild(playerDiv);
+            });
+
+            selectWeather();
+        }
+
+        function checkAllPINsConfirmed() {
+            if (confirmations.every(confirmed => confirmed)) {
+                previousRolls = [];
+                updatePreviousRolls();
+                document.getElementById('dayEndMessage').style.display = 'none';
+                document.getElementById('game').style.display = 'block';
+                document.getElementById('timeOfDay').textContent = 'Day';
+                selectWeather();
+            }
+        }
+
+        function selectWeather() {
+            const d8 = Math.floor(Math.random() * 8);
+            weather = weatherTypes[d8];
+            document.getElementById('currentWeather').textContent = `${weather.type} (Severity: ${weather.severity})`;
+            console.log(weather);
+        }
+
+    </script>
+</body>
+</html>
